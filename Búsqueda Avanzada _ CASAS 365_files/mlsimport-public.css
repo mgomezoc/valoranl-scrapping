@@ -1,0 +1,80 @@
+.listing-image-wrap .listing-thumb .img-fluid{
+width:100%;
+}
+/*// real homes*/
+.flexslider .slides img {
+	max-height: 700px;
+}
+
+
+.property-item  img{
+	width:488px;
+
+}
+
+/*
+WPestate*/
+#carousel-listing .slick-slide img {
+	max-height: 550px;
+}
+
+#carousel-listing-nav img {
+	max-height: 90px;
+}
+
+
+/*mlsimport infobox photo alignment*/
+
+#infobox_title {
+	font-size: 13px;
+}
+
+.prop_pricex{
+	font-size:13px!important;
+}
+
+.infobox_wrapper_image img{
+	min-height:85px;
+}
+
+.infobox_title{
+	height:30px;
+}
+
+/*mlsimport imported listings photos alignment*/
+.property_listing .listing-unit-img-wrapper,
+.property_listing .carousel{
+	float: left;
+	max-height: 230px;
+}
+
+
+
+/*===houzez*/
+
+/*photoswipe*/
+
+.pswp__zoom-wrap{
+		transform: scale(1)!important;
+}
+.pswp__img {
+
+	top: 50%!important;
+	left: 50%!important;
+	transform: translate(-50%, -50%);
+}
+
+
+/*unit cards*/
+.item-header {
+	height: 200px;
+	overflow: hidden;
+	background: black;
+	width: 100%;
+}
+
+.listing-image-wrap .listing-thumb .img-fluid {
+	width: 100%;
+	height: 200px;
+	object-fit: cover;
+}

@@ -1,0 +1,75 @@
+/*
+ Theme Name:   WpResidence child theme
+ Theme URI:    https://themeforest.net/item/wp-residence-real-estate-wordpress-theme/7896392
+ Description:  WpResidence child theme
+ Author:       WpEstate
+ Author URI:   http://wpestate.org
+ Template:     wpresidence
+ Version:      1.0.0
+ License:      GNU General Public License v2 or later
+ License URI:  http://www.gnu.org/licenses/gpl-2.0.html
+*/
+
+/*=print invoice
+--------------------------------------------------------------------------------*/
+.invoice_print_title {
+    font-size: 25px;
+    border-top: 1px solid #f0f0f0;
+    padding-top: 20px;
+    margin-bottom: 5px;
+}
+
+.wpestate_invoice_date{
+  font-size: 13px;
+}
+
+.wpestate_print_invoice_to_section,
+.wpestate_print_invoice_from_whom_section{
+  width: 50%;
+  float: left;
+  margin-top: 45px;
+  font-size: 14px;
+  margin-bottom: 45px;
+  line-height: 1.5em;
+}
+
+.wpestate_print_invoice_details_wrapper{
+  width: 100%;
+  text-align: right;
+}
+
+.wpestate_print_invoice_details_detail{
+  width: 100%;
+  float: left;
+  border-bottom: 1px solid #f1f1f1;
+  padding: 15px 0px;
+  font-size: 13px;
+  margin-bottom:0px;
+}
+
+.wpestate_print_invoice_details_detail label{
+  float:left;
+  font-weight: 700;
+}
+
+.wpestate_print_invoice_details_wrapper{
+
+}
+
+.wpestate_print_invoice_details_wrapperex_details{
+  width: 100%;
+  float: left;
+  text-align: left;
+  margin-top: 30px;
+  font-size: 14px;
+  line-height: 1.5em;
+}
+
+.wpestate_print_invoice_end{
+  width: 100%;
+  float: left;
+  text-align: left;
+  margin-top: 30px;
+  font-size: 14px;
+  line-height: 1.5em;
+}
