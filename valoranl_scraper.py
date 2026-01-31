@@ -658,6 +658,295 @@ class BasePortalScraper:
 
 class Casas365Scraper(BasePortalScraper):
     """
+    Scraper para CASAS365 (wpresidence/wpestate).
+    Basado estrictamente en el HTML real proporcionado:
+    - Card: div.listing_wrapper[data-listid]
+    - URL: div.property_listing[data-link] o h4 a[href]
+    - Title: h4 a
+    - Price: div.listing_unit_price_wrapper (incluye span.price_label)
+    - Beds/Baths/M2: div.property_listing_details_v7_item[data-bs-original-title="..."]
+    """
+
+    def __init__(self, conn):
+        cfg = PORTAL_CONFIGS.get("CASAS365", {"max_pages": 1})
+        # IMPORTANTE: tu base_url actual es /busqueda-avanzada/ "limpia".
+        # Si quieres usar tu URL con filtros, cámbiala aquí por la URL completa.
+        super().__init__(
+            conn,
+            portal_code="CASAS365",
+            base_url="https://casas365.mx/busqueda-avanzada/",
+            max_pages=cfg["max_pages"],
+        )
+
+    # -------------------------
+    # Paginación (crítica)
+    # -------------------------
+    def get_listing_url(self, page_num: int) -> str:
+        """
+        Estrategia resiliente:
+        - Page 1: base_url
+        - Page N: intenta con ?pagina=N
+          Si no hay cards, BasePortalScraper no reintenta; por eso haremos el fallback
+          desde run() mediante _fetch_page_soup() para probar paged.
+        """
+        if page_num == 1:
+            return self.base_url
+        return f"{self.base_url}?pagina={page_num}"
+
+    # -------------------------
+    # Selectores reales
+    # -------------------------
+    def get_cards_selector(self) -> str:
+        # Selector REAL según tu HTML
+        return "div.listing_wrapper[data-listid]"
+
+    # -------------------------
+    # Override run() para fallback de paginación (pagina -> paged)
+    # -------------------------
+    def run(self):
+        logger.info("=== Iniciando scraping %s ===", self.portal_code)
+        total_processed = 0
+
+        for page in range(1, self.max_pages + 1):
+            # 1) Intento primario con get_listing_url (pagina)
+            url_primary = self.get_listing_url(page)
+
+            soup, used_url, cards = self._fetch_page_with_fallback(url_primary, page)
+
+            logger.info(
+                "%s página %s: encontrados %s anuncios (URL=%s)",
+                self.portal_code,
+                page,
+                len(cards),
+                used_url,
+            )
+
+            if not cards:
+                break
+
+            for idx, card in enumerate(cards, start=1):
+                try:
+                    data = self.parse_card(card, used_url)
+                    if not data:
+                        continue
+
+                    scraped_at = datetime.now()
+
+                    upsert_property(
+                        self.conn,
+                        portal_id=self.portal_id,
+                        external_id=data["external_id"],
+                        external_url=data["external_url"],
+                        source_page_url=used_url,
+                        source_page_number=page,
+                        source_position=idx,
+                        title=data.get("title", data.get("raw_title", "Sin título")),
+                        description=data.get("description"),
+                        price=data.get("price"),
+                        currency=data.get("currency"),
+                        operation_type=data.get("operation_type"),
+                        property_type=data.get("property_type"),
+                        country=data.get("country", "México"),
+                        state=data.get("state"),
+                        municipality=data.get("municipality"),
+                        neighborhood=data.get("neighborhood"),
+                        city=data.get("city"),
+                        postal_code=data.get("postal_code"),
+                        address_text=data.get("address_text"),
+                        latitude=data.get("latitude"),
+                        longitude=data.get("longitude"),
+                        bedrooms=data.get("bedrooms"),
+                        bathrooms=data.get("bathrooms"),
+                        parking_spaces=data.get("parking_spaces"),
+                        land_area_m2=data.get("land_area_m2"),
+                        construction_area_m2=data.get("construction_area_m2"),
+                        year_built=data.get("year_built"),
+                        main_url=data.get("main_url", data["external_url"]),
+                        thumbnail_url=data.get("thumbnail_url"),
+                        raw_title=data.get("raw_title"),
+                        raw_price_text=data.get("raw_price_text"),
+                        raw_location_text=data.get("raw_location_text"),
+                        scraped_at=scraped_at,
+                    )
+
+                    total_processed += 1
+
+                except Exception as e:
+                    logger.error(
+                        "%s: Error procesando card página %s idx %s: %s",
+                        self.portal_code,
+                        page,
+                        idx,
+                        e,
+                        exc_info=False,
+                    )
+
+            random_sleep(1.5, 4.0)
+
+        logger.info(
+            "=== Fin scraping %s: %s propiedades procesadas ===",
+            self.portal_code,
+            total_processed,
+        )
+
+    def _fetch_page_with_fallback(self, url_primary: str, page_num: int):
+        """
+        Intenta descargar y parsear:
+        1) url_primary (con pagina)
+        2) si 0 cards y page>1, intenta misma base pero con paged=page
+        """
+        RATE_LIMITER.wait()
+        logger.info("%s GET %s", self.portal_code, url_primary)
+        resp = self.session.get(url_primary, timeout=HTTP_TIMEOUT)
+
+        if resp.status_code != 200:
+            logger.error("%s: HTTP %s en %s", self.portal_code, resp.status_code, url_primary)
+            return None, url_primary, []
+
+        soup = BeautifulSoup(resp.text, "html.parser")
+        cards = soup.select(self.get_cards_selector())
+
+        # Fallback solo si page > 1 y no hay cards
+        if page_num > 1 and not cards:
+            url_fallback = f"{self.base_url}?paged={page_num}"
+            RATE_LIMITER.wait()
+            logger.info("%s GET (fallback paged) %s", self.portal_code, url_fallback)
+            resp2 = self.session.get(url_fallback, timeout=HTTP_TIMEOUT)
+            if resp2.status_code == 200:
+                soup2 = BeautifulSoup(resp2.text, "html.parser")
+                cards2 = soup2.select(self.get_cards_selector())
+                if cards2:
+                    return soup2, url_fallback, cards2
+
+        return soup, url_primary, cards
+
+    # -------------------------
+    # Parse card real
+    # -------------------------
+    def parse_card(self, card, page_url: str) -> dict | None:
+        # ID estable (CRÍTICO)
+        external_id = (card.get("data-listid") or "").strip()
+        if not external_id:
+            return None
+
+        # URL externa (prioriza data-link)
+        link_url = None
+        inner = card.select_one("div.property_listing[data-link]")
+        if inner and inner.get("data-link"):
+            link_url = inner.get("data-link", "").strip()
+
+        if not link_url:
+            a = card.select_one("h4 a[href]")
+            if a and a.get("href"):
+                link_url = a.get("href", "").strip()
+
+        if not link_url:
+            return None
+
+        external_url = urljoin("https://casas365.mx", link_url)
+
+        # Título
+        title_el = card.select_one("h4 a")
+        raw_title = title_el.get_text(" ", strip=True) if title_el else ""
+        raw_title = re.sub(r"\s+", " ", raw_title).strip() or "Sin título"
+
+        # Precio y moneda desde el wrapper observado
+        price_wrap = card.select_one("div.listing_unit_price_wrapper")
+        raw_price_text = price_wrap.get_text(" ", strip=True) if price_wrap else ""
+        raw_price_text = re.sub(r"\s+", " ", raw_price_text).strip()
+
+        price, currency = parse_price(raw_price_text)
+
+        # Imagen principal
+        img = card.select_one("div.listing-unit-img-wrapper img")
+        thumbnail_url = None
+        if img:
+            thumbnail_url = (img.get("data-original") or img.get("src") or "").strip() or None
+            if thumbnail_url:
+                thumbnail_url = urljoin("https://casas365.mx", thumbnail_url)
+
+        # Helpers: valores por tooltip (data-bs-original-title)
+        def _get_int_by_tooltip(tt: str):
+            node = card.select_one(
+                f'div.property_listing_details_v7_item[data-bs-original-title="{tt}"]'
+            )
+            if not node:
+                return None
+            txt = re.sub(r"\s+", " ", node.get_text(" ", strip=True))
+            m = re.search(r"(\d+)\s*$", txt)
+            return safe_int(m.group(1)) if m else None
+
+        def _get_float_m2_by_tooltip(tt: str):
+            node = card.select_one(
+                f'div.property_listing_details_v7_item[data-bs-original-title="{tt}"] span'
+            )
+            if not node:
+                return None
+            txt = re.sub(r"\s+", " ", node.get_text(" ", strip=True))
+            m = re.search(r"([\d.]+)", txt)
+            return safe_float(m.group(1)) if m else None
+
+        bedrooms = _get_int_by_tooltip("Recámaras")
+        bathrooms = _get_int_by_tooltip("Baños")
+        construction_m2 = _get_float_m2_by_tooltip("Construcción")
+        land_m2 = _get_float_m2_by_tooltip("Lot Size")
+
+        # Estacionamientos: NO viene como tooltip en tu HTML.
+        parking_spaces = None
+
+        # Ubicación best-effort desde el título: "... , García"
+        raw_location_text = None
+        city = None
+        neighborhood = None
+        if "," in raw_title:
+            left, right = raw_title.rsplit(",", 1)
+            city = right.strip() or None
+            # quita prefijos comunes del lado izquierdo
+            left = re.sub(
+                r"^(Casa|Departamento|Terreno|Bodega|Oficina)\s+en\s+(Venta|Renta)\s+",
+                "",
+                left.strip(),
+                flags=re.I,
+            ).strip()
+            neighborhood = left or None
+
+        raw_location_text = ", ".join([x for x in [neighborhood, city] if x]) or None
+
+        # Normalización
+        operation_type = "venta"  # tu URL es venta; si luego agregas renta, lo cambiamos
+        property_type = "casa"    # en tu query filtras casa; en general podríamos inferir desde categorías
+
+        return {
+            "external_id": external_id,
+            "external_url": external_url,
+            "title": raw_title,
+            "raw_title": raw_title,
+            "price": price,
+            "currency": currency,
+            "operation_type": operation_type,
+            "property_type": property_type,
+            "country": "México",
+            "state": "Nuevo León",
+            "municipality": city,
+            "neighborhood": neighborhood,
+            "city": city,
+            "postal_code": None,
+            "address_text": raw_location_text,
+            "latitude": None,
+            "longitude": None,
+            "bedrooms": bedrooms,
+            "bathrooms": bathrooms,
+            "parking_spaces": parking_spaces,
+            "land_area_m2": land_m2,
+            "construction_area_m2": construction_m2,
+            "year_built": None,
+            "main_url": external_url,
+            "thumbnail_url": thumbnail_url,
+            "raw_price_text": raw_price_text,
+            "raw_location_text": raw_location_text,
+        }
+
+    """
     Scraper para CASAS365.
     Usamos IDs propios del card si existen (data-id, etc.) y
     fallback al URL completo si no.
