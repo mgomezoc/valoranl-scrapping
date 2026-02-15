@@ -38,6 +38,21 @@ def clean_text(value: Any) -> str | None:
     return text or None
 
 
+def truncate_text(value: str | None, max_len: int, field_name: str, metrics: "Metrics") -> str | None:
+    if value is None:
+        return None
+    if len(value) <= max_len:
+        return value
+    metrics.warnings += 1
+    LOGGER.warning(
+        "Campo truncado %s (len=%s > %s)",
+        field_name,
+        len(value),
+        max_len,
+    )
+    return value[:max_len]
+
+
 def parse_float(value: Any) -> float | None:
     if value is None:
         return None
@@ -299,6 +314,10 @@ class Casas365Mapper(SQLiteSourceMapper):
         url_hash = sha256(url_norm)
         dedupe = url_hash or fingerprint
 
+        street = clean_text(row["calle"])
+        # En Casas365 el campo calle a veces contiene descripciones completas; evitamos error Data too long.
+        street = truncate_text(street, 255, "street", metrics)
+
         return CanonicalListing(
             source_code=self.source_code,
             source_listing_id=None,
@@ -322,12 +341,12 @@ class Casas365Mapper(SQLiteSourceMapper):
             parking=parse_int(row["estacionamientos"]),
             floors=parse_int(row["plantas"]),
             age_years=None,
-            title=title,
+            title=truncate_text(title, 500, "title", metrics),
             description=clean_text(row["descripcion"]),
-            street=clean_text(row["calle"]),
-            colony=colony,
-            municipality=municipality,
-            state=clean_text(row["estado_geo"]) or "Nuevo León",
+            street=street,
+            colony=truncate_text(colony, 180, "colony", metrics),
+            municipality=truncate_text(municipality, 180, "municipality", metrics),
+            state=truncate_text(clean_text(row["estado_geo"]) or "Nuevo León", 120, "state", metrics),
             country="México",
             postal_code=None,
             lat=parse_float(row["latitud"]),
@@ -377,6 +396,8 @@ class GPViviendaMapper(SQLiteSourceMapper):
             "imagen_url": clean_text(row["imagen_url"]),
         }
 
+        title = clean_text(row["titulo"]) or clean_text(row["modelo"])
+
         return CanonicalListing(
             source_code=self.source_code,
             source_listing_id=None,
@@ -400,12 +421,12 @@ class GPViviendaMapper(SQLiteSourceMapper):
             parking=None,
             floors=None,
             age_years=None,
-            title=clean_text(row["titulo"]) or clean_text(row["modelo"]),
+            title=truncate_text(title, 500, "title", metrics),
             description=clean_text(row["descripcion"]),
             street=None,
-            colony=colony,
-            municipality=municipality,
-            state=clean_text(row["estado"]) or "Nuevo León",
+            colony=truncate_text(colony, 180, "colony", metrics),
+            municipality=truncate_text(municipality, 180, "municipality", metrics),
+            state=truncate_text(clean_text(row["estado"]) or "Nuevo León", 120, "state", metrics),
             country="México",
             postal_code=None,
             lat=None,
@@ -453,6 +474,8 @@ class RealtyWorldMapper(SQLiteSourceMapper):
             "precio_texto": clean_text(row["precio_texto"]),
         }
 
+        title = clean_text(row["titulo"])
+
         return CanonicalListing(
             source_code=self.source_code,
             source_listing_id=clean_text(row["property_id"]),
@@ -476,12 +499,12 @@ class RealtyWorldMapper(SQLiteSourceMapper):
             parking=parse_int(row["estacionamientos"]),
             floors=parse_int(row["plantas"]),
             age_years=None,
-            title=clean_text(row["titulo"]),
+            title=truncate_text(title, 500, "title", metrics),
             description=clean_text(row["descripcion"]),
             street=None,
-            colony=colony,
-            municipality=municipality,
-            state=clean_text(row["estado"]),
+            colony=truncate_text(colony, 180, "colony", metrics),
+            municipality=truncate_text(municipality, 180, "municipality", metrics),
+            state=truncate_text(clean_text(row["estado"]), 120, "state", metrics),
             country="México",
             postal_code=None,
             lat=None,
