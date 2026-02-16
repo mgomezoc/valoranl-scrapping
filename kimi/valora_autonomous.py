@@ -1135,9 +1135,9 @@ class ValoraAutonomous:
         finally:
             self.engine.close()
 
-def _process_adapter(self, adapter: BaseAdapter) -> Dict:
-    """Procesa un adaptador individual con reintentos"""
-    LOGGER.info(f"Procesando: {adapter.source_name}")
+    def _process_adapter(self, adapter: BaseAdapter) -> Dict:
+        """Procesa un adaptador individual con reintentos"""
+        LOGGER.info(f"Procesando: {adapter.source_name}")
 
         for attempt in range(CONFIG['max_retries']):
             try:
@@ -1146,7 +1146,7 @@ def _process_adapter(self, adapter: BaseAdapter) -> Dict:
 
                 # Unificar
                 source_id = self.engine.get_or_create_source(
-                    adapter.source_code, 
+                    adapter.source_code,
                     adapter.source_name
                 )
 
@@ -1171,7 +1171,9 @@ def _process_adapter(self, adapter: BaseAdapter) -> Dict:
                 adapter.metrics['inserted'] = inserted
                 adapter.metrics['updated'] = updated
 
-                LOGGER.info(f"  Insertados: {inserted}, Actualizados: {updated}, Errores: {adapter.metrics['errors']}")
+                LOGGER.info(
+                    f"  Insertados: {inserted}, Actualizados: {updated}, Errores: {adapter.metrics['errors']}"
+                )
 
                 return adapter.metrics
 
@@ -1184,14 +1186,14 @@ def _process_adapter(self, adapter: BaseAdapter) -> Dict:
                 else:
                     raise
 
-def _print_summary(self, metrics: Dict):
-    """Imprime resumen de ejecución"""
-    print("\n" + "=" * 70)
+    def _print_summary(self, metrics: Dict):
+        """Imprime resumen de ejecución"""
+        print("\n" + "=" * 70)
         print("RESUMEN DE EJECUCIÓN")
         print("=" * 70)
         print(f"ID: {metrics['execution_id']}")
         print(f"Estado: {'ÉXITO' if not metrics['failed_sources'] else 'PARCIAL'}")
-print(f"\nFuentes procesadas: {metrics['sources_processed']}")
+        print(f"\nFuentes procesadas: {metrics['sources_processed']}")
         print(f"Total listings: {metrics['total_listings']}")
         print(f"Nuevos: {metrics['new_listings']}")
         print(f"Actualizados: {metrics['updated_listings']}")
@@ -1199,12 +1201,12 @@ print(f"\nFuentes procesadas: {metrics['sources_processed']}")
         if metrics.get('deactivated'):
             print(f"Desactivados: {metrics['deactivated']}")
 
-print(f"\nPor fuente:")
+        print("\nPor fuente:")
         for source, m in metrics['by_source'].items():
             print(f"  • {source}: {m['read']} leídos, {m['inserted']} nuevos, {m['updated']} actualizados")
 
-if metrics['failed_sources']:
-    print(f"\nFuentes fallidas:")
+        if metrics['failed_sources']:
+            print("\nFuentes fallidas:")
             for source, error in metrics['failed_sources'].items():
                 print(f"  ✗ {source}: {error}")
 
