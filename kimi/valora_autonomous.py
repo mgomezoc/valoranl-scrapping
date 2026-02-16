@@ -30,6 +30,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from enum import Enum
 import importlib.util
 
+from env_utils import load_env_file, env_int
+
+# Cargar .env local (mismo directorio del script)
+load_env_file()
+
 # Configuración de logging
 logging.basicConfig(
     level=logging.INFO,
@@ -48,17 +53,17 @@ LOGGER = logging.getLogger("valora_autonomous")
 CONFIG = {
     'mysql': {
         'host': os.getenv('MYSQL_HOST', 'localhost'),
-        'port': int(os.getenv('MYSQL_PORT', '3306')),
+        'port': env_int('MYSQL_PORT', 3306),
         'user': os.getenv('MYSQL_USER', 'root'),
         'password': os.getenv('MYSQL_PASSWORD', ''),
-        'database': 'valoranl'
+        'database': os.getenv('MYSQL_DATABASE', 'valoranl')
     },
     'checkpoint_file': 'valora_checkpoint.json',
-    'max_retries': 3,
+    'max_retries': env_int('MAX_RETRIES', 3),
     'retry_delay_base': 2,  # segundos
     'batch_size': 100,
-    'stale_days': 30,
-    'parallel_workers': 2,
+    'stale_days': env_int('STALE_DAYS', 30),
+    'parallel_workers': env_int('PARALLEL_WORKERS', 2),
 }
 
 # ============================================================================

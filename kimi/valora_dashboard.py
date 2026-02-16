@@ -19,6 +19,10 @@ from pathlib import Path
 from functools import lru_cache
 from typing import Dict, List, Any
 
+from env_utils import load_env_file, env_int
+
+load_env_file()
+
 try:
     from flask import Flask, render_template_string, jsonify
 except ImportError:
@@ -36,10 +40,10 @@ app = Flask(__name__)
 # Configuración
 MYSQL_CONFIG = {
     'host': os.getenv('MYSQL_HOST', 'localhost'),
-    'port': int(os.getenv('MYSQL_PORT', '3306')),
+    'port': env_int('MYSQL_PORT', 3306),
     'user': os.getenv('MYSQL_USER', 'root'),
     'password': os.getenv('MYSQL_PASSWORD', ''),
-    'database': 'valoranl',
+    'database': os.getenv('MYSQL_DATABASE', 'valoranl'),
     'charset': 'utf8mb4'
 }
 

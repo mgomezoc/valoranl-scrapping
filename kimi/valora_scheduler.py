@@ -22,6 +22,10 @@ from pathlib import Path
 from dataclasses import dataclass, asdict
 from typing import Optional
 
+from env_utils import load_env_file, env_int
+
+load_env_file()
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s | %(levelname)-8s | %(name)s | %(message)s',
@@ -260,7 +264,7 @@ def main():
     parser.add_argument('--once', action='store_true', help='Ejecutar una vez')
     parser.add_argument('--stop', action='store_true', help='Detener daemon')
     parser.add_argument('--status', action='store_true', help='Mostrar estado')
-    parser.add_argument('--interval', type=int, default=3600, 
+    parser.add_argument('--interval', type=int, default=env_int('SCHEDULER_INTERVAL', 3600), 
                        help='Intervalo en segundos (default: 3600 = 1 hora)')
 
     args = parser.parse_args()

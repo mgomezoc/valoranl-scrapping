@@ -6,10 +6,16 @@ Ejecuta: python setup_valora.py
 Verifica dependencias, crea estructura inicial y configura el sistema.
 """
 
+import os
 import subprocess
 import sys
 from pathlib import Path
 from typing import List, Tuple
+
+from env_utils import load_env_file, env_int
+
+
+load_env_file()
 
 
 class Colors:
@@ -37,6 +43,15 @@ def print_error(text: str) -> None:
 
 def print_warning(text: str) -> None:
     print(f"{Colors.YELLOW}⚠{Colors.END} {text}")
+
+
+MYSQL_CONFIG = {
+    "host": os.getenv("MYSQL_HOST", "localhost"),
+    "port": env_int("MYSQL_PORT", 3306),
+    "user": os.getenv("MYSQL_USER", "root"),
+    "password": os.getenv("MYSQL_PASSWORD", ""),
+    "database": os.getenv("MYSQL_DATABASE", "valoranl"),
+}
 
 
 def check_python_version() -> bool:
@@ -82,10 +97,10 @@ def check_mysql_connection() -> Tuple[bool, str]:
         import pymysql
 
         conn = pymysql.connect(
-            host="localhost",
-            port=3306,
-            user="root",
-            password="",
+            host=MYSQL_CONFIG["host"],
+            port=MYSQL_CONFIG["port"],
+            user=MYSQL_CONFIG["user"],
+            password=MYSQL_CONFIG["password"],
             charset="utf8mb4",
         )
         conn.close()
@@ -105,10 +120,10 @@ def check_source_databases() -> List[Tuple[str, bool, str]]:
         import pymysql
 
         conn = pymysql.connect(
-            host="localhost",
-            port=3306,
-            user="root",
-            password="",
+            host=MYSQL_CONFIG["host"],
+            port=MYSQL_CONFIG["port"],
+            user=MYSQL_CONFIG["user"],
+            password=MYSQL_CONFIG["password"],
             database="casas365",
         )
         cursor = conn.cursor()
