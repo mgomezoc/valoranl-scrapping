@@ -154,6 +154,176 @@ def normalize_price_type(*texts: str | None) -> str:
     return "unknown"
 
 
+# ---------------------------------------------------------------------------
+# Mejora 2: Normalización canónica de property_type
+# ---------------------------------------------------------------------------
+PROPERTY_TYPE_MAP: dict[str, str] = {
+    "casa": "casa",
+    "casas": "casa",
+    "house": "casa",
+    "residencia": "casa",
+    "departamento": "departamento",
+    "depto": "departamento",
+    "depto.": "departamento",
+    "departamentos": "departamento",
+    "apartment": "departamento",
+    "terreno": "terreno",
+    "terrenos": "terreno",
+    "lote": "terreno",
+    "land": "terreno",
+    "local": "local",
+    "local comercial": "local",
+    "oficina": "oficina",
+    "bodega": "bodega",
+    "rancho": "rancho",
+}
+
+
+def normalize_property_type(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    key = raw.strip().lower()
+    return PROPERTY_TYPE_MAP.get(key, key)
+
+
+# ---------------------------------------------------------------------------
+# Mejora 3: Normalización de municipio y colonia para NL
+# ---------------------------------------------------------------------------
+MUNICIPALITY_ALIASES: dict[str, str] = {
+    "sta. catarina": "Santa Catarina",
+    "sta catarina": "Santa Catarina",
+    "santa catarina, n.l.": "Santa Catarina",
+    "mty": "Monterrey",
+    "mty.": "Monterrey",
+    "monterrey, n.l.": "Monterrey",
+    "san pedro": "San Pedro Garza García",
+    "san pedro garza garcia": "San Pedro Garza García",
+    "san pedro garza garcía, n.l.": "San Pedro Garza García",
+    "spgg": "San Pedro Garza García",
+    "apodaca": "Apodaca",
+    "gral. escobedo": "General Escobedo",
+    "general escobedo": "General Escobedo",
+    "gral escobedo": "General Escobedo",
+    "guadalupe, n.l.": "Guadalupe",
+    "garcia": "García",
+    "garcía": "García",
+    "juarez": "Juárez",
+    "juárez": "Juárez",
+    "cadereyta jimenez": "Cadereyta Jiménez",
+    "cadereyta jiménez": "Cadereyta Jiménez",
+    "cienega de flores": "Ciénega de Flores",
+    "ciénega de flores": "Ciénega de Flores",
+    "santiago, n.l.": "Santiago",
+}
+
+
+def normalize_municipality(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    text = raw.strip()
+    if not text:
+        return None
+    lookup = text.lower()
+    if lookup in MUNICIPALITY_ALIASES:
+        return MUNICIPALITY_ALIASES[lookup]
+    return text.title()
+
+
+def normalize_colony(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    text = raw.strip()
+    if not text:
+        return None
+    # Eliminar sufijos ruidosos comunes
+    text = re.sub(r",?\s*Nuevo León$", "", text, flags=re.IGNORECASE)
+    text = re.sub(r",?\s*N\.?L\.?$", "", text, flags=re.IGNORECASE)
+    text = text.strip().strip(",").strip()
+    if not text:
+        return None
+    return text.title()
+
+
+# ---------------------------------------------------------------------------
+# Mejora 1: Inferir age_years desde año de construcción o descripción
+# ---------------------------------------------------------------------------
+_AGE_FROM_YEAR_RE = re.compile(
+    r"(?:construi(?:da|do)\s+en|año\s+(?:de\s+)?construcci[oó]n[:\s]*|built\s+in)\s*(\d{4})",
+    re.IGNORECASE,
+)
+_AGE_FROM_YEARS_RE = re.compile(
+    r"(\d{1,3})\s*años?\s+de\s+antig[uü]edad",
+    re.IGNORECASE,
+)
+
+
+def infer_age_years(
+    ano_construccion: int | None = None,
+    description: str | None = None,
+    title: str | None = None,
+) -> int | None:
+    """Intenta inferir la edad del inmueble en años."""
+    current_year = datetime.now().year
+
+    # Prioridad 1: campo directo año de construcción
+    if ano_construccion is not None and 1900 < ano_construccion <= current_year:
+        return current_year - ano_construccion
+
+    # Prioridad 2: regex en descripción/título
+    for text in (description, title):
+        if not text:
+            continue
+        # "construida en 2018" / "año de construcción: 2015"
+        match = _AGE_FROM_YEAR_RE.search(text)
+        if match:
+            year = int(match.group(1))
+            if 1900 < year <= current_year:
+                return current_year - year
+        # "15 años de antigüedad"
+        match = _AGE_FROM_YEARS_RE.search(text)
+        if match:
+            years = int(match.group(1))
+            if 0 <= years <= 120:
+                return years
+
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Mejora 5: Validación de precios razonables para NL
+# ---------------------------------------------------------------------------
+MIN_SALE_PRICE = 100_000        # $100K MXN mínimo para venta
+MAX_SALE_PRICE = 100_000_000    # $100M MXN máximo
+MIN_PPU_M2 = 3_000              # $3,000/m² mínimo razonable en NL
+MAX_PPU_M2 = 80_000             # $80,000/m² máximo razonable en NL
+
+
+def validate_listing_price(
+    price: float | None,
+    area_construction_m2: float | None,
+    price_type: str,
+) -> tuple[bool, str | None]:
+    """Valida si el precio es razonable. Retorna (is_valid, reason)."""
+    if price is None:
+        return True, None
+    if price_type != "sale":
+        return True, None
+
+    if price < MIN_SALE_PRICE:
+        return False, f"precio_venta={price:.0f} < mín {MIN_SALE_PRICE}"
+    if price > MAX_SALE_PRICE:
+        return False, f"precio_venta={price:.0f} > máx {MAX_SALE_PRICE}"
+
+    if area_construction_m2 and area_construction_m2 > 0:
+        ppu = price / area_construction_m2
+        if ppu < MIN_PPU_M2:
+            return False, f"PPU={ppu:.0f} < mín {MIN_PPU_M2}"
+        if ppu > MAX_PPU_M2:
+            return False, f"PPU={ppu:.0f} > máx {MAX_PPU_M2}"
+
+    return True, None
+
+
 def resolve_sqlite_path(file_name: str) -> Path:
     here = Path(__file__).resolve().parent
     candidates = [
@@ -174,6 +344,8 @@ class Metrics:
     inserted: int = 0
     updated: int = 0
     duplicates: int = 0
+    skipped_price: int = 0
+    stale_deactivated: int = 0
     warnings: int = 0
     errors: int = 0
 
@@ -285,9 +457,10 @@ class Casas365Mapper(SQLiteSourceMapper):
         url_norm = normalize_url(url)
         price = parse_float(row["precio"])
         bathrooms = parse_bathrooms(row["banos"])
-        municipality = clean_text(row["ciudad"])
-        colony = clean_text(row["colonia"])
+        municipality = normalize_municipality(clean_text(row["ciudad"]))
+        colony = normalize_colony(clean_text(row["colonia"]))
         title = clean_text(row["titulo"])
+        description = clean_text(row["descripcion"])
         status = normalize_status(clean_text(row["estado"]))
         if price is None:
             metrics.warnings += 1
@@ -318,6 +491,8 @@ class Casas365Mapper(SQLiteSourceMapper):
         # En Casas365 el campo calle a veces contiene descripciones completas; evitamos error Data too long.
         street = truncate_text(street, 255, "street", metrics)
 
+        age_years = infer_age_years(description=description, title=title)
+
         return CanonicalListing(
             source_code=self.source_code,
             source_listing_id=None,
@@ -332,7 +507,7 @@ class Casas365Mapper(SQLiteSourceMapper):
             price_amount=price,
             currency=(clean_text(row["moneda"]) or "MXN")[:3].upper(),
             maintenance_fee=None,
-            property_type=clean_text(row["tipo"]),
+            property_type=normalize_property_type(clean_text(row["tipo"])),
             area_construction_m2=area_const,
             area_land_m2=area_land,
             bedrooms=bedrooms,
@@ -340,9 +515,9 @@ class Casas365Mapper(SQLiteSourceMapper):
             half_bathrooms=None,
             parking=parse_int(row["estacionamientos"]),
             floors=parse_int(row["plantas"]),
-            age_years=None,
+            age_years=age_years,
             title=truncate_text(title, 500, "title", metrics),
-            description=clean_text(row["descripcion"]),
+            description=description,
             street=street,
             colony=truncate_text(colony, 180, "colony", metrics),
             municipality=truncate_text(municipality, 180, "municipality", metrics),
@@ -371,8 +546,8 @@ class GPViviendaMapper(SQLiteSourceMapper):
         url = clean_text(row["url"])
         url_norm = normalize_url(url)
         price = parse_float(row["precio"])
-        municipality = clean_text(row["ciudad"])
-        colony = clean_text(row["fraccionamiento"])
+        municipality = normalize_municipality(clean_text(row["ciudad"]))
+        colony = normalize_colony(clean_text(row["fraccionamiento"]))
         bedrooms = parse_int(row["recamaras"])
         area_const = parse_float(row["m2_construidos"])
         area_land = parse_float(row["m2_terreno"])
@@ -397,6 +572,8 @@ class GPViviendaMapper(SQLiteSourceMapper):
         }
 
         title = clean_text(row["titulo"]) or clean_text(row["modelo"])
+        description = clean_text(row["descripcion"])
+        age_years = infer_age_years(description=description, title=title)
 
         return CanonicalListing(
             source_code=self.source_code,
@@ -412,7 +589,7 @@ class GPViviendaMapper(SQLiteSourceMapper):
             price_amount=price,
             currency="MXN",
             maintenance_fee=None,
-            property_type="Casa",
+            property_type=normalize_property_type("casa"),
             area_construction_m2=area_const,
             area_land_m2=area_land,
             bedrooms=bedrooms,
@@ -420,9 +597,9 @@ class GPViviendaMapper(SQLiteSourceMapper):
             half_bathrooms=None,
             parking=None,
             floors=None,
-            age_years=None,
+            age_years=age_years,
             title=truncate_text(title, 500, "title", metrics),
-            description=clean_text(row["descripcion"]),
+            description=description,
             street=None,
             colony=truncate_text(colony, 180, "colony", metrics),
             municipality=truncate_text(municipality, 180, "municipality", metrics),
@@ -451,8 +628,8 @@ class RealtyWorldMapper(SQLiteSourceMapper):
         url = clean_text(row["url"])
         url_norm = normalize_url(url)
         price = parse_float(row["precio"])
-        municipality = clean_text(row["ciudad"])
-        colony = clean_text(row["colonia"])
+        municipality = normalize_municipality(clean_text(row["ciudad"]))
+        colony = normalize_colony(clean_text(row["colonia"]))
         bedrooms = parse_int(row["recamaras"])
         area_const = parse_float(row["construccion_m2"])
 
@@ -465,16 +642,23 @@ class RealtyWorldMapper(SQLiteSourceMapper):
         dedupe = url_hash or fingerprint
 
         half_baths = parse_float(row["medios_banos"])
+        ano_construccion = parse_int(row["ano_construccion"])
         details = {
             "property_id": clean_text(row["property_id"]),
             "frente_m": parse_float(row["frente_m"]),
             "fondo_m": parse_float(row["fondo_m"]),
-            "ano_construccion": parse_int(row["ano_construccion"]),
+            "ano_construccion": ano_construccion,
             "fecha_publicacion": clean_text(row["fecha_publicacion"]),
             "precio_texto": clean_text(row["precio_texto"]),
         }
 
         title = clean_text(row["titulo"])
+        description = clean_text(row["descripcion"])
+        age_years = infer_age_years(
+            ano_construccion=ano_construccion,
+            description=description,
+            title=title,
+        )
 
         return CanonicalListing(
             source_code=self.source_code,
@@ -486,11 +670,11 @@ class RealtyWorldMapper(SQLiteSourceMapper):
             fingerprint_hash=fingerprint,
             dedupe_hash=dedupe,
             status="active",
-            price_type=normalize_price_type(clean_text(row["titulo"])),
+            price_type=normalize_price_type(title),
             price_amount=price,
             currency="MXN",
             maintenance_fee=None,
-            property_type="Casa",
+            property_type=normalize_property_type("casa"),
             area_construction_m2=area_const,
             area_land_m2=parse_float(row["terreno_m2"]),
             bedrooms=bedrooms,
@@ -498,9 +682,9 @@ class RealtyWorldMapper(SQLiteSourceMapper):
             half_bathrooms=half_baths,
             parking=parse_int(row["estacionamientos"]),
             floors=parse_int(row["plantas"]),
-            age_years=None,
+            age_years=age_years,
             title=truncate_text(title, 500, "title", metrics),
-            description=clean_text(row["descripcion"]),
+            description=description,
             street=None,
             colony=truncate_text(colony, 180, "colony", metrics),
             municipality=truncate_text(municipality, 180, "municipality", metrics),
@@ -599,6 +783,7 @@ class MySQLMigrator:
 
     def migrate_mapper(self, mapper: SQLiteSourceMapper) -> Metrics:
         metrics = Metrics()
+        batch_size = 500
         with self.connect(with_database=True) as conn:
             with conn.cursor() as cursor:
                 source_id = self.get_or_create_source_id(cursor, mapper)
@@ -606,12 +791,52 @@ class MySQLMigrator:
                     metrics.read += 1
                     try:
                         canonical = mapper.map_row(row, metrics)
+
+                        # Mejora 5: validar precio antes de insertar
+                        price_ok, price_reason = validate_listing_price(
+                            canonical.price_amount,
+                            canonical.area_construction_m2,
+                            canonical.price_type,
+                        )
+                        if not price_ok:
+                            metrics.skipped_price += 1
+                            LOGGER.warning(
+                                "%s precio inválido (%s) | url=%s",
+                                mapper.source_code,
+                                price_reason,
+                                canonical.url,
+                            )
+                            continue
+
                         self._upsert_listing(cursor, source_id, canonical, metrics)
                     except Exception as exc:
                         metrics.errors += 1
                         LOGGER.exception("Error al migrar %s fila id=%s: %s", mapper.source_code, row["id"], exc)
+
+                    if metrics.read % batch_size == 0:
+                        conn.commit()
+
                 conn.commit()
         return metrics
+
+    def deactivate_stale_listings(self, days: int = 30) -> int:
+        """Mejora 4: Marca como inactive los listings no vistos en N días."""
+        with self.connect(with_database=True) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE listings
+                    SET status = 'inactive', updated_at = NOW()
+                    WHERE status = 'active'
+                      AND seen_last_at < DATE_SUB(NOW(), INTERVAL %s DAY)
+                    """,
+                    (days,),
+                )
+                count = cursor.rowcount
+                if count > 0:
+                    LOGGER.info("Desactivados %d listings no vistos en %d días.", count, days)
+                conn.commit()
+        return count
 
     def _upsert_listing(self, cursor, source_id: int, listing: CanonicalListing, metrics: Metrics) -> None:
         cursor.execute(
@@ -729,34 +954,45 @@ class MySQLMigrator:
         )
 
 
-def print_summary(summary: dict[str, Metrics]) -> None:
+def print_summary(summary: dict[str, Metrics], stale_count: int = 0) -> None:
     print("\n=== RESUMEN DE MIGRACIÓN ===")
     totals = Metrics()
     for source, metric in summary.items():
         print(
             f"{source:<12} leídos={metric.read:<5} insertados={metric.inserted:<5} "
             f"actualizados={metric.updated:<5} duplicados={metric.duplicates:<5} "
+            f"precio_inv={metric.skipped_price:<4} "
             f"warnings={metric.warnings:<4} errores={metric.errors:<4}"
         )
         totals.read += metric.read
         totals.inserted += metric.inserted
         totals.updated += metric.updated
         totals.duplicates += metric.duplicates
+        totals.skipped_price += metric.skipped_price
         totals.warnings += metric.warnings
         totals.errors += metric.errors
 
-    print("-" * 80)
+    print("-" * 90)
     print(
         f"TOTAL        leídos={totals.read:<5} insertados={totals.inserted:<5} "
         f"actualizados={totals.updated:<5} duplicados={totals.duplicates:<5} "
+        f"precio_inv={totals.skipped_price:<4} "
         f"warnings={totals.warnings:<4} errores={totals.errors:<4}"
     )
+    if stale_count > 0:
+        print(f"\nListings desactivados por inactividad (>30 días sin verse): {stale_count}")
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Unifica fuentes SQLite de ValoraNL a MySQL")
     parser.add_argument("--init-schema", type=Path, help="Ruta al script SQL para inicializar esquema")
     parser.add_argument("--migrate", action="store_true", help="Ejecuta migración a MySQL")
+    parser.add_argument(
+        "--stale-days",
+        type=int,
+        default=30,
+        help="Días sin ver un listing antes de marcarlo como inactive (default: 30). Usa 0 para desactivar.",
+    )
     return parser
 
 
@@ -783,7 +1019,13 @@ def main() -> int:
         for mapper in mappers:
             LOGGER.info("Iniciando migración para %s (%s)", mapper.source_code, mapper.db_path)
             summary[mapper.source_code] = migrator.migrate_mapper(mapper)
-        print_summary(summary)
+
+        # Mejora 4: desactivar listings no vistos recientemente
+        stale_count = 0
+        if args.stale_days > 0:
+            stale_count = migrator.deactivate_stale_listings(days=args.stale_days)
+
+        print_summary(summary, stale_count=stale_count)
 
     return 0
 
